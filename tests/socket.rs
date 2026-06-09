@@ -12,6 +12,40 @@ async fn send_recv() {
 	assert!(&buffer[..12] == b"Hello world!");
 }
 
+/// Test a simple send and peek call.
+#[tokio::test]
+async fn send_peek() {
+	assert!(let Ok((a, b)) = UnixSeqpacket::pair());
+	assert!(let Ok(12) = a.send(b"Hello world!").await);
+
+	let mut buffer = [0u8; 128];
+
+	// Peeking should not consume the message, so do it twice
+	for _ in 0..2 {
+		assert!(let Ok(12) = b.peek(&mut buffer).await);
+		assert!(&buffer[..12] == b"Hello world!");
+	}
+
+	// We should still able to receive the message after peeking
+	assert!(let Ok(12) = b.recv(&mut buffer).await);
+	assert!(&buffer[..12] == b"Hello world!");
+}
+
+/// Test peeking a portion of a message with a small buffer.
+#[tokio::test]
+async fn peek_partial() {
+	assert!(let Ok((a, b)) = UnixSeqpacket::pair());
+	assert!(let Ok(12) = a.send(b"Hello world!").await);
+
+	let mut buffer = [0u8; 128];
+	assert!(let Ok(5) = b.peek(&mut buffer[..5]).await);
+	assert!(&buffer[..5] == b"Hello");
+
+	// We should still able to receive the full message after peeking
+	assert!(let Ok(12) = b.recv(&mut buffer).await);
+	assert!(&buffer[..12] == b"Hello world!");
+}
+
 /// Record boundaries should be preserved
 #[tokio::test]
 async fn record_boundaries() {
@@ -90,6 +124,45 @@ async fn send_recv_vectored() {
 	assert!(&space == b" ");
 	assert!(&world == b"world");
 	assert!(&punct == b"!");
+}
+
+/// Test a simple send_vectored and peek_vectored call.
+#[tokio::test]
+async fn send_peek_vectored() {
+	use std::io::{IoSlice, IoSliceMut};
+
+	assert!(let Ok((a, b)) = UnixSeqpacket::pair());
+	assert!(let Ok(12) = a.send_vectored(&[
+		IoSlice::new(b"Hello"),
+		IoSlice::new(b" "),
+		IoSlice::new(b"world"),
+		IoSlice::new(b"!"),
+	]).await);
+
+	let mut hello = [0u8; 5];
+	let mut space = [0u8; 1];
+	let mut world = [0u8; 5];
+	let mut punct = [0u8; 1];
+
+	// Peeking should not consume the message
+	for _ in 0..2 {
+		assert!(let Ok(12) = b.peek_vectored(&mut [
+			IoSliceMut::new(&mut hello),
+			IoSliceMut::new(&mut space),
+			IoSliceMut::new(&mut world),
+			IoSliceMut::new(&mut punct),
+		]).await);
+
+		assert!(&hello == b"Hello");
+		assert!(&space == b" ");
+		assert!(&world == b"world");
+		assert!(&punct == b"!");
+	}
+
+	// We should still able to receive the message after peeking
+	let mut buffer = [0u8; 12];
+	assert!(let Ok(12) = b.recv(&mut buffer).await);
+	assert!(&buffer[..12] == b"Hello world!");
 }
 
 #[test]
