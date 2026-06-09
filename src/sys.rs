@@ -169,13 +169,14 @@ pub fn send_msg(
 	}
 }
 
-pub fn recv(socket: &FileDesc, buffer: &mut [u8]) -> std::io::Result<usize> {
+pub fn recv(socket: &FileDesc, buffer: &mut [u8], peek: bool) -> std::io::Result<usize> {
 	unsafe {
+		let peek_flag = if peek { libc::MSG_PEEK } else { 0 };
 		let read = check_size(libc::recv(
 			socket.as_raw_fd(),
 			buffer.as_mut_ptr() as *mut c_void,
 			buffer.len(),
-			RECV_MSG_DEFAULT_FLAGS,
+			RECV_MSG_DEFAULT_FLAGS | peek_flag,
 		))?;
 		Ok(read)
 	}
@@ -185,6 +186,7 @@ pub fn recv_msg<'a>(
 	socket: &FileDesc,
 	buffer: &mut [IoSliceMut],
 	ancillary_buffer: &'a mut [u8],
+	peek: bool,
 ) -> std::io::Result<(usize, AncillaryMessageReader<'a>)> {
 	let control_data = match ancillary_buffer.len() {
 		0 => std::ptr::null_mut(),
@@ -211,11 +213,12 @@ pub fn recv_msg<'a>(
 			.map_err(|_| std::io::ErrorKind::InvalidInput)?;
 	}
 
+	let peek_flag = if peek { libc::MSG_PEEK } else { 0 };
 	let size = unsafe {
 		check_size(libc::recvmsg(
 			socket.as_raw_fd(),
 			&mut header as *mut _,
-			RECV_MSG_DEFAULT_FLAGS,
+			RECV_MSG_DEFAULT_FLAGS | peek_flag,
 		))?
 	};
 	let truncated = header.msg_flags & libc::MSG_CTRUNC != 0;
