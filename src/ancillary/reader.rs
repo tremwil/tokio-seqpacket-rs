@@ -36,6 +36,7 @@ use super::FD_SIZE;
 pub struct AncillaryMessageReader<'a> {
 	pub(crate) buffer: &'a mut [u8],
 	pub(crate) truncated: bool,
+	pub(crate) data_truncated: bool,
 }
 
 /// Iterator over ancillary messages from a [`AncillaryMessageReader`].
@@ -122,8 +123,12 @@ impl<'a> AncillaryMessageReader<'a> {
 	/// The created reader assumes ownership of objects (such as file descriptors) within the message.
 	/// Because of this, you may only create one ancillary message reader for any ancillary message received from the kernel.
 	/// You must also ensure that no other object assumes ownership of the objects within the message.
-	pub unsafe fn new(buffer: &'a mut [u8], truncated: bool) -> Self {
-		Self { buffer, truncated }
+	pub unsafe fn new(buffer: &'a mut [u8], truncated: bool, data_truncated: bool) -> Self {
+		Self {
+			buffer,
+			truncated,
+			data_truncated,
+		}
 	}
 
 	/// Returns the number of used bytes.
@@ -136,7 +141,7 @@ impl<'a> AncillaryMessageReader<'a> {
 		self.buffer.is_empty()
 	}
 
-	/// Is `true` if during a recv operation the ancillary message was truncated.
+	/// Is `true` if during a recv or peek operation the ancillary message was truncated.
 	///
 	/// # Example
 	///
@@ -161,6 +166,33 @@ impl<'a> AncillaryMessageReader<'a> {
 	/// ```
 	pub fn is_truncated(&self) -> bool {
 		self.truncated
+	}
+
+	/// Is `true` if during a recv or peek operation the message bytes were truncated.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use tokio_seqpacket::UnixSeqpacket;
+	/// use tokio_seqpacket::ancillary::AncillaryMessageReader;
+	/// use std::io::IoSliceMut;
+	///
+	/// #[tokio::main]
+	/// async fn main() -> std::io::Result<()> {
+	///     let sock = UnixSeqpacket::connect("/tmp/sock").await?;
+	///
+	///     let mut ancillary_buffer = [0; 128];
+	///
+	///     let mut buf = [1; 8];
+	///     let mut bufs = &mut [IoSliceMut::new(&mut buf)];
+	///     let (_read, ancillary) = sock.recv_vectored_with_ancillary(bufs, &mut ancillary_buffer).await?;
+	///
+	///     println!("Is data truncated: {}", ancillary.is_data_truncated());
+	///     Ok(())
+	/// }
+	/// ```
+	pub fn is_data_truncated(&self) -> bool {
+		self.data_truncated
 	}
 
 	/// Returns the iterator of the control messages.

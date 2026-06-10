@@ -221,12 +221,14 @@ pub fn recv_msg<'a>(
 			RECV_MSG_DEFAULT_FLAGS | peek_flag,
 		))?
 	};
+	let data_truncated = header.msg_flags & libc::MSG_TRUNC != 0;
 	let truncated = header.msg_flags & libc::MSG_CTRUNC != 0;
 	// This is not a no-op on all platforms.
 	#[allow(clippy::unnecessary_cast)]
 	let length = header.msg_controllen as usize;
 
-	let ancillary_reader = unsafe { AncillaryMessageReader::new(&mut ancillary_buffer[..length], truncated) };
+	let ancillary_reader =
+		unsafe { AncillaryMessageReader::new(&mut ancillary_buffer[..length], truncated, data_truncated) };
 
 	#[cfg(any(target_os = "illumos", target_os = "solaris"))]
 	post_process_fds(&ancillary_reader);

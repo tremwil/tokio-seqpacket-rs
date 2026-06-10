@@ -2,7 +2,10 @@
 
 use assert2::assert;
 use std::io::{IoSliceMut, Read, Seek};
-use tokio_seqpacket::ancillary::{AncillaryMessageReader, OwnedAncillaryMessage};
+use tokio_seqpacket::{
+	ancillary::{AncillaryMessageReader, OwnedAncillaryMessage},
+	UnixSeqpacket,
+};
 
 mod ancillary_fd_helper;
 use ancillary_fd_helper::receive_file_descriptor_socket;
@@ -10,7 +13,7 @@ use ancillary_fd_helper::receive_file_descriptor_socket;
 #[tokio::test]
 async fn peek_fd() {
 	// Create a socket that receives a file descriptor
-	let socket = receive_file_descriptor_socket(b"Content", b"Hello World!").await;
+	let socket = receive_file_descriptor_socket(b"Content", b"Hello world!").await;
 
 	let mut read_buf = [0u8; 64];
 	let mut ancillary_buf = [0u8; 64];
@@ -44,4 +47,32 @@ async fn peek_fd() {
 	// We should be able to receive the message after peeking at it.
 	assert!(let Ok((12, cmsg)) = socket.recv_vectored_with_ancillary(&mut [IoSliceMut::new(&mut read_buf)], &mut ancillary_buf).await);
 	assert_cmsg(cmsg)
+}
+
+/// Test that receiving a message partially sets the data truncated flag.
+#[tokio::test]
+async fn recv_partial_truncated() {
+	assert!(let Ok((a, b)) = UnixSeqpacket::pair());
+	assert!(let Ok(12) = a.send(b"Hello world!").await);
+
+	let mut buffer = [0u8; 5];
+	assert!(let Ok((5, cmsg)) = b.recv_vectored_with_ancillary(&mut [IoSliceMut::new(&mut buffer)], &mut []).await);
+	assert!(cmsg.is_data_truncated());
+	assert_eq!(&buffer, b"Hello");
+}
+
+/// Test that peeking at a message with an insufficient buffer sets the data truncated flag.
+#[tokio::test]
+async fn peek_partial_truncated() {
+	assert!(let Ok((a, b)) = UnixSeqpacket::pair());
+	assert!(let Ok(12) = a.send(b"Hello world!").await);
+
+	let mut buffer = [0u8; 128];
+	assert!(let Ok((5, cmsg)) = b.peek_vectored_with_ancillary(&mut [IoSliceMut::new(&mut buffer[..5])], &mut []).await);
+	assert!(cmsg.is_data_truncated());
+	assert_eq!(&buffer[..5], b"Hello");
+
+	assert!(let Ok((12, cmsg)) = b.recv_vectored_with_ancillary(&mut [IoSliceMut::new(&mut buffer)], &mut []).await);
+	assert!(!cmsg.is_data_truncated());
+	assert_eq!(&buffer[..12], b"Hello world!");
 }
