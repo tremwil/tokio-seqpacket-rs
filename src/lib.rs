@@ -41,6 +41,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 macro_rules! ready {
 	($e:expr) => {
